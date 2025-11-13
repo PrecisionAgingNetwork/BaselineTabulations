@@ -1,0 +1,3 @@
+load("/Users/joelparker/Library/CloudStorage/GoogleDrive-joelparkerbiostatistics@gmail.com/My Drive/Computer/Bio5/PAN Reports/BaselineTabulations/dbconnect_info.Rdata")
+ls()
+dbconnect_info

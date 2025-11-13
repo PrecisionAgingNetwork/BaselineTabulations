@@ -1,0 +1,36 @@
+# Baseline Tabulations
+
+
+## Introduction
+
+This report summarize data collected in REDCap for PAN Project 2.
+
+## Report Frequency
+
+This report is ran once a month, currently I run it the first Monday of
+every month.
+
+## Connecting to database
+
+In the first line of this second chunk, you’ll see code that establishes
+the database connection. The connection uses credentials stored as
+environment variables in a local .Renviron file rather than hard-coding
+them in the script. To run this code as written, you’ll need to create a
+.Renviron file on your machine with the same variables. The credentials
+are then accessed via Sys.getenv() as shown below:
+
+    con <- dbConnect(
+      RPostgres::Postgres(),
+      host        = Sys.getenv("host"),
+      user        = Sys.getenv("user"),
+      password    = Sys.getenv("password"),
+      dbname      = Sys.getenv("dbname"),
+      sslmode     = Sys.getenv("sslmode"),
+      sslrootcert = "rds-ca-2019-root (2).pem"
+    )
+
+## Save report document to Gdrive
+
+The report is shared on GDrive at the folling link.
+
+<https://drive.google.com/drive/folders/1ag27R24lZm-t-IYSc4VI_mWzxB2bLhQp?dmr=1&ec=wgc-drive-globalnav-goto>
