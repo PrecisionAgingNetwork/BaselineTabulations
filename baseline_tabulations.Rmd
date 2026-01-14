@@ -42,7 +42,7 @@ con <- dbConnect(
    password = Sys.getenv("password"),
    dbname = Sys.getenv("dbname"),
    sslmode = Sys.getenv("sslmode"),
-   sslrootcert = "rds-ca-2019-root (2).pem"
+   sslrootcert = Sys.getenv("sslrootcert")
  )
 
 
