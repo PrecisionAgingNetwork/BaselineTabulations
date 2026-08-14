@@ -8,6 +8,14 @@ editor_options:
   chunk_output_type: console
 ---
 
+```{r parse_args, include=FALSE}
+source("get_participant_ids.R")
+
+args <- commandArgs(trailingOnly = TRUE)
+args <- args[args != "--args"]
+freeze_date <- if (length(args) > 0) args[1] else NULL
+```
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, message = FALSE)
 
@@ -27,7 +35,7 @@ for (pkg in packages) {
 # Set file locations ---------
 
 if (Sys.info()["sysname"] == "Darwin") {
-  setwd("~/Library/CloudStorage/GoogleDrive-joelparkerbiostatistics@gmail.com/My Drive/Computer/Bio5/PAN Reports/BaselineTabulations")
+  setwd("~/src/git/github.com/tyuhasbio5/BaselineTabulations")
 } else if (Sys.info()["sysname"] == "Linux") {
   setwd("/data/rscripts/BaselineTabulations/")
 }
@@ -52,9 +60,16 @@ con <- dbConnect(
 
 # # Load tables
 
-demo <- dbReadTable(con, "p2_redcap_demographics") %>%
-  select(record_id, hml_id, hml_id_created_date,
-         age, decade, sex, race, hispanic_latino, area = site, memory_rank)  %>%
+demo <- dbReadTable(con, "p2_redcap_mindcrowd_demographics") %>%
+  filter(visit == 1) %>%
+  select(record_id, hml_id,
+         age, decade, sex, race, hispanic_latino, area = site, memory_rank) %>%
+  left_join(
+    dbReadTable(con, "p2_redcap_demographics") %>%
+      filter(visit == 1) %>%
+      select(record_id, hml_id, hml_id_created_date),
+    by = c("record_id", "hml_id")
+  ) %>%
   # Create variables for app table/plots
   mutate(age_group = case_when(age %in% 40:49 ~ "40-49",
                                age %in% 50:59 ~ "50-59",
@@ -71,20 +86,29 @@ elig <- dbReadTable(con, "p2_redcap_eligibility") %>%
   select(record_id, hml_id, not_eligible, hif_eligible_behav, hif_eligible_mri, hif_eligible_bd)
 
 cons <- dbReadTable(con, "p2_redcap_consent_form") %>%
+  filter(visit == 1) %>%
   select(record_id, hml_id, main_consent_date, main_consent_upload)
 
 # Get list of consented participants
-consented_ids <- subset(cons, !is.na(main_consent_upload))$hml_id
+consented_ids <- if (!is.null(freeze_date)) {
+  get_participant_ids(freeze_date, con)
+} else {
+  subset(cons, !is.na(main_consent_upload))$hml_id
+}
 
-phq9 <- dbReadTable(con, "p2_redcap_cognitive_function_phq9")
+phq9 <- dbReadTable(con, "p2_redcap_cognitive_function_phq9") %>%
+  filter(visit == 1)
 
-moca <- dbReadTable(con, "p2_redcap_cognitive_function_moca")
+moca <- dbReadTable(con, "p2_redcap_cognitive_function_moca") %>%
+  filter(visit == 1)
 
 naart <- dbReadTable(con, "p2_redcap_cognitive_function_naart")
 
-avlt <- dbReadTable(con, "p2_redcap_cognitive_function_avlt")
+avlt <- dbReadTable(con, "p2_redcap_cognitive_function_avlt") %>%
+  filter(visit == 1)
 
-biometrics <- dbReadTable(con, "p2_redcap_biometrics")
+biometrics <- dbReadTable(con, "p2_redcap_biometrics") %>%
+  filter(visit == 1)
 
 # dm_checklist <- dbReadTable(con, "p2_redcap_dm_checklist") %>%
   # select(hml_id, dm_checklist_complete)
@@ -120,7 +144,7 @@ These participants are in the MC Demographics form and have been assigned HML ID
 ```{r recruit summary}
 
 participants_dat <- demo %>%
-  left_join(cons, by = "record_id") %>%
+  left_join(cons, by = c("record_id", "hml_id")) %>%
   mutate(consent_uploaded = ifelse(!is.na(main_consent_upload), "Consented", "Non-Consented"))
 
 label(participants_dat$sex) <- "Sex"
@@ -132,14 +156,19 @@ table1(~sex + age_group + race_group + consent_uploaded | area, data = participa
 
 ```
 
-#### Consented Participants
+#### Consented Participants `r if (!is.null(freeze_date)) paste0("(as of ", freeze_date, ")")`
 
 The following table contains only participants whose consent has been uploaded to REDCap. The rest of this report follows these participants.
 
 ```{r consented summary}
 
-table1(~sex + age_group + race_group | area, 
-       data = filter(participants_dat,  !is.na(main_consent_upload)))
+consented_dat <- if (!is.null(freeze_date)) {
+  filter(participants_dat, hml_id %in% consented_ids)
+} else {
+  filter(participants_dat, !is.na(main_consent_upload))
+}
+
+table1(~sex + age_group + race_group | area, data = consented_dat)
 
 ```
 
@@ -180,15 +209,18 @@ I have removed those participants from the rest of this report.
 
 ```{r filtering consented participants}
 
-base <- filter(base,
-               record_id %in% participants_dat$record_id[participants_dat$consent_uploaded == "Consented"])
+consented_record_ids <- if (!is.null(freeze_date)) {
+  participants_dat$record_id[participants_dat$hml_id %in% consented_ids]
+} else {
+  participants_dat$record_id[participants_dat$consent_uploaded == "Consented"]
+}
 
-elig <- filter(elig,
-               record_id %in% participants_dat$record_id[participants_dat$consent_uploaded == "Consented"])
+base <- filter(base, record_id %in% consented_record_ids)
+elig <- filter(elig, record_id %in% consented_record_ids)
 
 ```
 
-### Cognitive Testing and Biometrics
+### Cognitive Testing and Biometrics `r if (!is.null(freeze_date)) paste0("(as of ", freeze_date, ")")`
 
 This table summarizes the cognitive testing in Scored Forms and the Biometrics Survey Status from the Experimental Tasks form. Participants without any missing form data are marked as "Non-Missing", if they have at least one missing entry then they are marked as "Missing."
 
@@ -200,7 +232,7 @@ assess <- base %>%
                    age_group, race_group, memory_rank, sex), by = c("record_id", "hml_id")) %>%
   # Filter for consented participants
   left_join(cons, by = c("record_id", "hml_id")) %>%
-  filter(!is.na(main_consent_upload)) %>%
+  { if (!is.null(freeze_date)) filter(., hml_id %in% consented_ids) else filter(., !is.na(main_consent_upload)) } %>%
   # Get postgres update date
   mutate(update_date = format(Sys.Date(), "%y%m%d")) %>%
   # Cognitive Summaries ~~~~~~~~~~~~~~
@@ -265,7 +297,7 @@ combined_hml_complete <- hml_complete %>%
 
 --------
 
-### Other Core and Project Data
+### Other Core and Project Data `r if (!is.null(freeze_date)) paste0("(as of ", freeze_date, ")")`
 
 ```{r frailty_data}
 
@@ -313,18 +345,21 @@ analyzed_carotid_ultrasound <- dbReadTable(con, "p2_carotid_ultrasound") %>%
 
 ```{r apoe}
 coreg_huentelman_apoe4 <- dbReadTable(con, "coreg_huentelman_apoe4") %>%
+  filter(visit == 1) %>%
   mutate(complete_apoe = "Complete") %>%
   select(hml_id, complete_apoe)
 ```
 
 ```{r ad_neurofilament_assay}
 coreg_ad_plasma_biomarkers <- dbReadTable(con, "coreg_ad_plasma_biomarkers") %>%
+  { if ("visit" %in% names(.)) filter(., visit == 1) else . } %>%
   mutate(complete_ad_biomarkers = "Complete") %>%
   select(hml_id, complete_ad_biomarkers)
 ```
 
 ```{r cytokine_data}
 coreg_doyle_cytokine <- dbReadTable(con, "coreg_doyle_cytokine") %>%
+  { if ("visit" %in% names(.)) filter(., visit == 1) else . } %>%
   select(hml_id, Eotaxin, Fgf2, IFNg, IL_10, IL_12p40, IL_13, IL_15, IL_17a, IL_1a, IL_1b, IL_2, IL_4, IL_5, IL_6, IL_7, IL_8, IP_10, MCP_1, MDC, MIP_1a, MIP_1b, TNFa, TNFb, VEGFa) %>%
   # If ID has data in column assign TRUE, else FALSE
   mutate(across(-hml_id, ~ifelse(!is.na(.), TRUE, FALSE))) %>%
@@ -337,6 +372,7 @@ coreg_doyle_cytokine <- dbReadTable(con, "coreg_doyle_cytokine") %>%
 ```{r epigenetic}
 
 coreg_huentelman_epigenetic <- dbReadTable(con, "coreg_huentelman_epigenetic") %>%
+  { if ("visit" %in% names(.)) filter(., visit == 1) else . } %>%
   mutate(complete_epi = "Complete") %>%
   select(hml_id, complete_epi)
 
@@ -345,6 +381,7 @@ coreg_huentelman_epigenetic <- dbReadTable(con, "coreg_huentelman_epigenetic") %
 ```{r prs}
 
 coreg_huentelman_prs <- dbReadTable(con, "coreg_huentelman_prs") %>%
+  filter(visit == 1) %>%
   mutate(complete_prs = "Complete") %>%
   select(hml_id, complete_prs)
 
@@ -473,7 +510,7 @@ kable(cbind(data.frame(Source = c(rep("P2", 2), rep("Core E", 4), rep("Core F", 
 
 ------------
 
-### MindCrowd Expanded Cognitive Function Tasks And Surveys
+### MindCrowd Expanded Cognitive Function Tasks And Surveys `r if (!is.null(freeze_date)) paste0("(as of ", freeze_date, ")")`
 
 The following summaries are for Health Minds for Life (P2) participants only.
 
@@ -587,6 +624,7 @@ raw_survey_list <- lapply(survey_names,
                                            TRUE ~ x)
                             
                             new_x %>%
+                              filter(visit == 1) %>%
                               select(hml_id, all_of(paste0(x, "_complete")))
                             
                           })
