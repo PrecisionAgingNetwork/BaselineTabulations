@@ -9,7 +9,7 @@ editor_options:
 ---
 
 ```{r parse_args, include=FALSE}
-source("get_participant_ids.R")
+source("https://raw.githubusercontent.com/PrecisionAgingNetwork/get_participant_ids/refs/heads/master/get_participant_ids.R")
 
 args <- commandArgs(trailingOnly = TRUE)
 args <- args[args != "--args"]
